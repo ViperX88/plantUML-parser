@@ -1,0 +1,18 @@
+package com.codingcrusaders.parser.model;
+
+import net.sourceforge.plantuml.code.Transcoder;
+import net.sourceforge.plantuml.code.TranscoderUtil;
+
+public abstract class Parser {
+
+    public static String encode(String umlText) {
+        Transcoder transcoder = TranscoderUtil.getDefaultTranscoder();
+        try {
+            return ("http://www.plantuml.com/plantuml/svg/" +
+                    transcoder.encode(umlText));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+}
