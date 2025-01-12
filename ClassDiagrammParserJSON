@@ -1,0 +1,390 @@
+package com.codingcrusaders.parser.model;
+
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.json.JSONTokener;
+
+public class ClassDiagramParserJSON extends Parser {
+
+    private JSONObject diagram;
+
+    public ClassDiagramParserJSON(InputStream jsonInputStream) {
+        JSONTokener tokener = new JSONTokener(jsonInputStream);
+        this.diagram = new JSONObject(tokener);
+    }
+
+    public String parseClassDiagram() {
+        StringBuilder plantUML = new StringBuilder();
+        plantUML.append("@startuml\n");
+
+        JSONArray classes = diagram.getJSONArray("classes");
+        String scope = diagram.optString("scope");
+        if(scope != ""){
+            if(scope.equals("strict")){
+                plantUML.append("skinparam classAttributeIconSize 0\n");
+            }
+        }
+        Map<String, String> supers = new HashMap<>();
+        for (int j = 0; j < classes.length(); j++) {
+            JSONObject umlClass = classes.getJSONObject(j);
+            String outerPossibleEnum = null;
+            String sup = umlClass.optString("super");
+            String id = umlClass.getString("id");
+            String stereotype = umlClass.optString("stereotype");
+
+            if (sup != "") {
+                supers.put(id, sup);
+            }
+
+            outerPossibleEnum = umlClass.optString("classifier");
+
+            if (outerPossibleEnum != "") {
+                if(outerPossibleEnum.equals("enum")){
+                    plantUML.append("enum ").append("\"").append(umlClass.getString("name")).append("\"").append(" {\n");
+                } else if(outerPossibleEnum.equals("interface")){
+                    plantUML.append("interface ").append("\"").append(umlClass.getString("name")).append("\"").append(" {\n");
+                } else if(outerPossibleEnum.equals("abstract")) {
+                    plantUML.append("abstract ").append("\"").append(umlClass.getString("name")).append("\"").append(" {\n");
+                } else {
+                    plantUML.append("class ").append("\"").append(umlClass.getString("name")).append("\"").append(" {\n");
+                }
+            } else if(stereotype != ""){
+                plantUML.append("class ").append("\"").append(umlClass.getString("name")).append("\"").append(" ").append("<< " + stereotype + " >>").append(" {\n");
+            } else {
+                plantUML.append("class ").append("\"").append(umlClass.getString("name")).append("\"").append(" {\n");
+            }
+
+            // Extract 'attributes' and add to class definition
+            JSONArray attributes = umlClass.optJSONArray("attributes");
+            if(attributes != null){
+                for (int k = 0; k < attributes.length(); k++) {
+                    JSONObject attribute = attributes.getJSONObject(k);
+                    if(outerPossibleEnum.equals("enum")){
+                        if(scope.equals("strict")){
+                            plantUML.append("\t").append(visible(attribute.getString("visibility")))
+                            .append(" ").append(attribute.getString("name")).append("\n");
+                        } else {
+                            plantUML.append("\t").append(attribute.getString("name")).append("\n");
+                        }                       
+                    }
+
+                    else if (outerPossibleEnum == "" || outerPossibleEnum.equals("abstract") || outerPossibleEnum.equals("interface")) {
+                        if(scope.equals("strict")){
+                            plantUML.append("\t").append(visible(attribute.getString("visibility"))).append(attribute.getString("type"))
+                            .append(" ").append(attribute.getString("name")).append("\n");
+                        } else {
+                            plantUML.append("\t").append(attribute.getString("type"))
+                            .append(" ").append(attribute.getString("name")).append("\n");
+                        }
+                    } else {
+                        plantUML.append("\t").append(attribute.getString("type")).append(" ").append(attribute.getString("name")).append("\n");
+                    }
+                }
+            }
+            JSONArray methods = umlClass.optJSONArray("methods");
+            if(methods != null){
+                for (int i = 0; i < methods.length(); i++) {
+                    JSONObject attribute = methods.getJSONObject(i);
+                    JSONArray parameters = attribute.optJSONArray("parameters");
+                    if(parameters != null){
+                        if(scope.equals("strict")){
+                            plantUML.append("\t").append(visible(attribute.getString("visibility"))).append(attribute.getString("type"))
+                            .append(" ").append(attribute.getString("name")).append("(");
+                            for(int s = 0; s < parameters.length(); s++){
+                                JSONObject parameter = parameters.getJSONObject(s);
+                                if(s > 0){
+                                    plantUML.append(",");
+                                }
+                                plantUML.append(parameter.getString("type")).append(" ").append(parameter.getString("name"));
+                            }
+                            plantUML.append(")\n");
+                        } else {
+                            plantUML.append("\t").append(attribute.getString("type"))
+                            .append(" ").append(attribute.getString("name")).append("(");
+                            for(int s = 0; s < parameters.length(); s++){
+                                JSONObject parameter = parameters.getJSONObject(s);
+                                if(s > 0){
+                                    plantUML.append(",");
+                                }
+                                plantUML.append(parameter.getString("type")).append(" ").append(parameter.getString("name"));
+                            }
+                            plantUML.append(")\n");
+                        }
+                    } else {
+                        if(scope.equals("strict")){
+                            plantUML.append("\t").append(visible(attribute.getString("visibility"))).append(attribute.getString("type"))
+                            .append(" ").append(attribute.getString("name")).append("()\n");
+                        } else {
+                            plantUML.append("\t").append(attribute.getString("type"))
+                            .append(" ").append(attribute.getString("name")).append("()\n");
+                        }
+                    }
+                }
+                plantUML.append("}\n\n");
+            } else {
+                plantUML.append("}\n");
+            }
+        }
+
+        // Extract 'associations' and build association definitions
+        JSONArray associations = diagram.getJSONArray("associations");
+        for (int j = 0; j < associations.length(); j++) {
+            JSONObject association = associations.getJSONObject(j);
+            String name = association.getString("name");
+            String type = association.getString("type");
+            String source = "";
+            String source_multiplicity = "";
+            String source_navigability = "";
+            String target = "";
+            String target_multiplicity = "";
+            String target_navigability = "";
+            String ternary = "";
+            String ternary_multiplicity = "";
+            String ternary_navigability = "";
+
+            JSONArray entities = association.getJSONArray("entities");
+
+            if(entities.length() < 3){
+                for (int i = 0; i < entities.length(); i++) {
+                    JSONObject entity = entities.getJSONObject(i);
+
+                    String role = entity.getString("role");
+                    if(role.equals("source")){
+                        source = getClassNameById(classes, entity.getString("id"));
+                        String opt_mult = entity.optString("multiplicity");
+                        if(opt_mult != ""){
+                            source_multiplicity = "\"" + opt_mult + "\"";
+                        } else {
+                            source_multiplicity = "";
+                        }
+                        if(type.equals("association")){
+                            source_navigability = entity.getString("navigability");
+                        }
+                    } else if(role.equals("target")){
+                        target = getClassNameById(classes, entity.getString("id"));
+                        String opt_mult = entity.optString("multiplicity");
+                        if(opt_mult != ""){
+                            target_multiplicity = "\"" + opt_mult + "\"";
+                        } else {
+                            target_multiplicity = "";
+                        }
+                        if(type.equals("association")){
+                            target_navigability = entity.getString("navigability");
+                        }
+                    }
+                }
+                plantUML.append("\"" + source + "\"" + " " + source_multiplicity + transformType(type, source_navigability, target_navigability) + target_multiplicity + " "
+                        + "\"" + target + "\"" );
+                if(!name.equals("")){
+                    plantUML.append(" : " + name);
+                }
+                plantUML.append("\n");
+                plantUML.append("\n");
+            } else {
+                // this is the only solution for ternary-associations in plantuml, the name
+                // isn't possible to be written
+                for (int i = 0; i < entities.length(); i++) {
+                    JSONObject entity = entities.getJSONObject(i);
+
+                    String role = entity.getString("role");
+                    if(role.equals("source")){
+                        source = getClassNameById(classes, entity.getString("id"));
+                        String opt_mult = entity.optString("multiplicity");
+                        if(opt_mult != ""){
+                            source_multiplicity = "\"" + opt_mult + "\"";
+                        } else {
+                            source_multiplicity = "";
+                        }
+                        if(type.equals("association")){
+                            source_navigability = entity.getString("navigability");
+                        }
+                    } else if(role.equals("target")){
+                        target = getClassNameById(classes, entity.getString("id"));
+                        String opt_mult = entity.optString("multiplicity");
+                        if(opt_mult != ""){
+                            target_multiplicity = "\"" + opt_mult + "\"";
+                        } else {
+                            target_multiplicity = "";
+                        }
+                        if(type.equals("association")){
+                            target_navigability = entity.getString("navigability");
+                        }
+                    } else if(role.equals("other")){
+                        ternary = getClassNameById(classes, entity.getString("id"));
+                        String opt_mult = entity.optString("multiplicity");
+                        if(opt_mult != ""){
+                            ternary_multiplicity = "\"" + opt_mult + "\"";
+                        } else {
+                            ternary_multiplicity = "";
+                        }
+                        if(type.equals("association")){
+                            ternary_navigability = entity.getString("navigability");
+                        }                       
+                    }
+                }
+                String diamond = "diamond";
+                plantUML.append("<> " + diamond + "\n");
+
+                plantUML.append(
+                        "\"" + source + "\"" + " " + source_multiplicity + transformTypeTer(type,source_navigability) + diamond + " : " + name + "\n");
+                plantUML.append( "\"" + target + "\"" + " " + target_multiplicity + transformTypeTer(type, target_navigability) + diamond + "\n");
+                plantUML.append(diamond + transformTypeTernary(type, ternary_navigability) + ternary_multiplicity + " " + "\"" + ternary + "\"" + "\n");
+                plantUML.append("\n");
+
+            }
+
+        }
+        if(!supers.isEmpty()){
+            supers.forEach((k,v) -> {
+                int idx = getTypeById(classes, v);
+                if(idx == 1){
+                        plantUML.append("\"").append(getClassNameById(classes, v)).append("\"").append(" <|.. ").append("\"").append(getClassNameById(classes, k)).append("\"").append("\n");
+                } else {
+                        plantUML.append("\"").append(getClassNameById(classes, v)).append("\"").append(" <|-- ").append("\"").append(getClassNameById(classes, k)).append("\"").append("\n");
+                }
+            });
+        }
+        plantUML.append("@enduml");
+        return plantUML.toString();
+    }
+
+    private String getClassNameById(JSONArray classes, String id) {
+        for (int i = 0; i < classes.length(); i++) {
+            JSONObject umlClass = classes.getJSONObject(i);
+            if (umlClass.getString("id").equals(id)) {
+                return umlClass.getString("name");
+            }
+        }
+        return null;
+    }
+
+    private int getTypeById(JSONArray classes, String id){
+        for (int i = 0; i < classes.length(); i++) {
+            JSONObject umlClass = classes.getJSONObject(i);
+            if (umlClass.getString("id").equals(id)) {
+                String classi = umlClass.optString("classifier");   
+                if(classi.equals("interface")){
+                    return 1;
+                } else {
+                    return 2;
+                }          
+            }
+        }
+        return 0;       
+    }
+
+    private String transformType(String type, String source_navigability, String target_navigability) {
+        switch (type) {
+            case "association": 
+                if(source_navigability.equals("navigable") && target_navigability.equals("navigable")){
+                    return " <--> ";
+                } else if(source_navigability.equals("navigable") && target_navigability.equals("unspecified")){
+                    return " <-- ";
+                } else if(target_navigability.equals("navigable") && source_navigability.equals("unspecified")){
+                    return " --> ";
+                } else if(source_navigability.equals("unspecified") && target_navigability.equals("unspecified")){
+                    return " -- ";
+                } else if(source_navigability.equals("unspecified") && target_navigability.equals("not_navigable")){
+                    return " --x ";
+                } else if(source_navigability.equals("not_navigable") && target_navigability.equals("unspecified")){
+                    return " x-- ";
+                } else if(source_navigability.equals("not_navigable") && target_navigability.equals("not_navigable")){
+                    return " x--x ";
+                } else if(source_navigability.equals("navigable") && target_navigability.equals("not_navigable")){
+                    return " <--x ";
+                } else if(source_navigability.equals("not_navigable") && target_navigability.equals("navigable")){
+                    return " x--> ";
+                } else {
+                    return " -- ";
+                }
+            case "inheritance":
+                return " <|-- ";
+            case "realization":
+                return " <|.. ";
+            case "dependency":
+                return " ..> ";
+            case "aggregation":
+                return " o-- ";
+            case "composition":
+                return " *-- ";
+            default:
+                return "";
+        }
+    }
+
+    private String transformTypeTer(String type, String navigability) {
+        switch (type) {
+            case "association": 
+                if(navigability.equals("navigable")){
+                    return " <-- ";
+                } else if(navigability.equals("unspecified")){
+                    return " -- ";
+                } else if(navigability.equals("not_navigable")){
+                    return " x-- ";
+                } else {
+                    return " -- ";
+                }
+            case "inheritance":
+                return " <|-- ";
+            case "realization":
+                return " <|.. ";
+            case "dependency":
+                return " ..> ";
+            case "aggregation":
+                return " o-- ";
+            case "composition":
+                return " *-- ";
+            default:
+                return "";
+        }
+    }
+
+    private String transformTypeTernary(String type, String navigability) {
+        switch (type) {
+            case "association": 
+                if(navigability.equals("navigable")){
+                    return " -->";
+                } else if(navigability.equals("unspecified")){
+                    return " -- ";
+                } else if(navigability.equals("not_navigable")){
+                    return " --x ";
+                } else {
+                    return " -- ";
+                }
+            case "inheritance":
+                return " --|> ";
+            case "realization":
+                return " ..|> ";
+            case "dependency":
+                return " <.. ";
+            case "aggregation":
+                return " --o ";
+            case "composition":
+                return " --* ";
+            default:
+                return "";
+        }
+    }
+
+    public String encodedDiagram() {
+        return encode(parseClassDiagram());
+    }
+
+    public String visible(String visibility){
+        switch(visibility){
+            case "public":
+                return "+ ";
+            case "private":
+                return "- ";
+            case "protected":
+                return "# ";
+            default:
+                return "";
+        }
+    }
+
+}
